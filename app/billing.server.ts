@@ -17,6 +17,10 @@ import prisma from "./db.server";
 export const PLAN_FREE = "free";
 export const PLAN_PRO = "pro";
 
+// Free-tier monthly alert cap, shown on the dashboard. Enforcement lives in worker.ts
+// (which keeps its own copy since it runs as a separate headless process).
+export const FREE_MONTHLY_CAP = 50;
+
 const PARTNER_TOKEN = process.env.SHOPIFY_PARTNER_API_TOKEN;
 const PARTNER_ORG = process.env.SHOPIFY_PARTNER_ORG_ID;
 const APP_ID = process.env.SHOPIFY_APP_ID; // numeric Shopify App id -> gid://shopify/App/<id>

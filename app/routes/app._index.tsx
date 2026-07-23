@@ -1,335 +1,221 @@
-import { useEffect } from "react";
+import { useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { useFetcher } from "@remix-run/react";
+import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
 import {
   Page,
   Layout,
-  Text,
   Card,
+  Text,
+  TextField,
   Button,
+  Banner,
   BlockStack,
-  Box,
-  List,
-  Link,
   InlineStack,
+  InlineGrid,
+  EmptyState,
+  Badge,
 } from "@shopify/polaris";
-import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
+import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
-import { refreshShopPlan } from "../billing.server";
+import prisma from "../db.server";
+import { refreshShopPlan, FREE_MONTHLY_CAP, PLAN_PRO } from "../billing.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
-  // Keep Shop.plan fresh from App Pricing (welcome-redirect param + Partner API) so the
-  // headless worker reads current entitlement. Full dashboard UI comes in Task 4.
+
+  // Keep Shop.plan fresh (welcome-redirect param + Partner API); also ensures the row exists.
   const plan = await refreshShopPlan(admin, session.shop, request);
-  return { plan };
-};
+  const shop = await prisma.shop.findUnique({ where: { shopDomain: session.shop } });
+  if (!shop) throw new Response("Shop not found", { status: 404 });
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-          }
-        }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
+  const [pendingCount, totalSubscribers, alertsSentThisCycle] = await Promise.all([
+    prisma.subscriber.count({ where: { shopId: shop.id, status: "pending" } }),
+    prisma.subscriber.count({ where: { shopId: shop.id } }),
+    prisma.alert.count({ where: { shopId: shop.id, sentAt: { gte: shop.cycleResetAt } } }),
+  ]);
 
-  const product = responseJson.data!.productCreate!.product!;
-  const variantId = product.variants.edges[0]!.node!.id!;
-
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyRemixTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
-
-  const variantResponseJson = await variantResponse.json();
+  const storeHandle = session.shop.replace(/\.myshopify\.com$/, "");
+  const appHandle = process.env.SHOPIFY_APP_HANDLE || "";
+  const planUrl = appHandle
+    ? `https://admin.shopify.com/store/${storeHandle}/charges/${appHandle}/pricing_plans`
+    : null;
 
   return {
-    product: responseJson!.data!.productCreate!.product,
-    variant:
-      variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
+    isPro: plan === PLAN_PRO,
+    pendingCount,
+    totalSubscribers,
+    alertsSentThisCycle,
+    cap: FREE_MONTHLY_CAP,
+    planUrl,
+    settings: {
+      fromName: shop.fromName ?? "",
+      replyTo: shop.replyTo ?? "",
+      brandColor: shop.brandColor ?? "#111111",
+      logoUrl: shop.logoUrl ?? "",
+      minThreshold: shop.minThreshold,
+    },
   };
 };
 
-export default function Index() {
-  const fetcher = useFetcher<typeof action>();
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  const form = await request.formData();
 
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
-  const productId = fetcher.data?.product?.id.replace(
-    "gid://shopify/Product/",
-    "",
+  const fromName = String(form.get("fromName") || "").trim();
+  const replyTo = String(form.get("replyTo") || "").trim();
+  const brandColor = String(form.get("brandColor") || "").trim() || "#111111";
+  const logoUrl = String(form.get("logoUrl") || "").trim();
+  const minThreshold = Math.max(1, parseInt(String(form.get("minThreshold") || "1"), 10) || 1);
+
+  await prisma.shop.update({
+    where: { shopDomain: session.shop },
+    data: {
+      fromName: fromName || null,
+      replyTo: replyTo || null,
+      brandColor,
+      logoUrl: logoUrl || null,
+      minThreshold,
+    },
+  });
+
+  return { ok: true };
+};
+
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <Card>
+      <BlockStack gap="100">
+        <Text as="p" tone="subdued" variant="bodySm">{label}</Text>
+        <Text as="p" variant="heading2xl">{value}</Text>
+        {sub ? <Text as="p" tone="subdued" variant="bodySm">{sub}</Text> : null}
+      </BlockStack>
+    </Card>
   );
+}
 
-  useEffect(() => {
-    if (productId) {
-      shopify.toast.show("Product created");
-    }
-  }, [productId, shopify]);
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+export default function Index() {
+  const data = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+  const nav = useNavigation();
+  const saving = nav.state !== "idle" && nav.formMethod === "POST";
+
+  const [fromName, setFromName] = useState(data.settings.fromName);
+  const [replyTo, setReplyTo] = useState(data.settings.replyTo);
+  const [brandColor, setBrandColor] = useState(data.settings.brandColor);
+  const [logoUrl, setLogoUrl] = useState(data.settings.logoUrl);
+  const [minThreshold, setMinThreshold] = useState(String(data.settings.minThreshold));
+
+  const isPro = data.isPro;
+  const hasSubscribers = data.totalSubscribers > 0;
 
   return (
     <Page>
-      <TitleBar title="Remix app template">
-        <button variant="primary" onClick={generateProduct}>
-          Generate a product
-        </button>
-      </TitleBar>
+      <TitleBar title="Restock Alerts" />
       <BlockStack gap="500">
-        <Layout>
-          <Layout.Section>
-            <Card>
-              <BlockStack gap="500">
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    Congrats on creating a new Shopify app 🎉
-                  </Text>
-                  <Text variant="bodyMd" as="p">
-                    This embedded app template uses{" "}
-                    <Link
-                      url="https://shopify.dev/docs/apps/tools/app-bridge"
-                      target="_blank"
-                      removeUnderline
-                    >
-                      App Bridge
-                    </Link>{" "}
-                    interface examples like an{" "}
-                    <Link url="/app/additional" removeUnderline>
-                      additional page in the app nav
-                    </Link>
-                    , as well as an{" "}
-                    <Link
-                      url="https://shopify.dev/docs/api/admin-graphql"
-                      target="_blank"
-                      removeUnderline
-                    >
-                      Admin GraphQL
-                    </Link>{" "}
-                    mutation demo, to provide a starting point for app
-                    development.
-                  </Text>
-                </BlockStack>
-                <BlockStack gap="200">
-                  <Text as="h3" variant="headingMd">
-                    Get started with products
-                  </Text>
-                  <Text as="p" variant="bodyMd">
-                    Generate a product with GraphQL and get the JSON output for
-                    that product. Learn more about the{" "}
-                    <Link
-                      url="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-                      target="_blank"
-                      removeUnderline
-                    >
-                      productCreate
-                    </Link>{" "}
-                    mutation in our API references.
-                  </Text>
-                </BlockStack>
-                <InlineStack gap="300">
-                  <Button loading={isLoading} onClick={generateProduct}>
-                    Generate a product
-                  </Button>
-                  {fetcher.data?.product && (
-                    <Button
-                      url={`shopify:admin/products/${productId}`}
-                      target="_blank"
-                      variant="plain"
-                    >
-                      View product
-                    </Button>
-                  )}
-                </InlineStack>
-                {fetcher.data?.product && (
-                  <>
-                    <Text as="h3" variant="headingMd">
-                      {" "}
-                      productCreate mutation
-                    </Text>
-                    <Box
-                      padding="400"
-                      background="bg-surface-active"
-                      borderWidth="025"
-                      borderRadius="200"
-                      borderColor="border"
-                      overflowX="scroll"
-                    >
-                      <pre style={{ margin: 0 }}>
-                        <code>
-                          {JSON.stringify(fetcher.data.product, null, 2)}
-                        </code>
-                      </pre>
-                    </Box>
-                    <Text as="h3" variant="headingMd">
-                      {" "}
-                      productVariantsBulkUpdate mutation
-                    </Text>
-                    <Box
-                      padding="400"
-                      background="bg-surface-active"
-                      borderWidth="025"
-                      borderRadius="200"
-                      borderColor="border"
-                      overflowX="scroll"
-                    >
-                      <pre style={{ margin: 0 }}>
-                        <code>
-                          {JSON.stringify(fetcher.data.variant, null, 2)}
-                        </code>
-                      </pre>
-                    </Box>
-                  </>
-                )}
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-          <Layout.Section variant="oneThird">
-            <BlockStack gap="500">
-              <Card>
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    App template specs
-                  </Text>
-                  <BlockStack gap="200">
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        Framework
-                      </Text>
-                      <Link
-                        url="https://remix.run"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        Remix
-                      </Link>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        Database
-                      </Text>
-                      <Link
-                        url="https://www.prisma.io/"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        Prisma
-                      </Link>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        Interface
-                      </Text>
-                      <span>
-                        <Link
-                          url="https://polaris.shopify.com"
-                          target="_blank"
-                          removeUnderline
-                        >
-                          Polaris
-                        </Link>
-                        {", "}
-                        <Link
-                          url="https://shopify.dev/docs/apps/tools/app-bridge"
-                          target="_blank"
-                          removeUnderline
-                        >
-                          App Bridge
-                        </Link>
-                      </span>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        API
-                      </Text>
-                      <Link
-                        url="https://shopify.dev/docs/api/admin-graphql"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        GraphQL API
-                      </Link>
-                    </InlineStack>
-                  </BlockStack>
-                </BlockStack>
-              </Card>
-              <Card>
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    Next steps
-                  </Text>
-                  <List>
-                    <List.Item>
-                      Build an{" "}
-                      <Link
-                        url="https://shopify.dev/docs/apps/getting-started/build-app-example"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        {" "}
-                        example app
-                      </Link>{" "}
-                      to get started
-                    </List.Item>
-                    <List.Item>
-                      Explore Shopify’s API with{" "}
-                      <Link
-                        url="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        GraphiQL
-                      </Link>
-                    </List.Item>
-                  </List>
-                </BlockStack>
-              </Card>
+        {actionData?.ok ? <Banner tone="success" title="Settings saved" /> : null}
+
+        <InlineGrid columns={{ xs: 1, sm: 3 }} gap="400">
+          <Stat label="Pending subscribers" value={String(data.pendingCount)} sub="Shoppers waiting on a restock" />
+          <Stat
+            label="Alerts sent this month"
+            value={String(data.alertsSentThisCycle)}
+            sub={isPro ? "Unlimited on Pro" : `of ${data.cap} free alerts used`}
+          />
+          <Card>
+            <BlockStack gap="200">
+              <Text as="p" tone="subdued" variant="bodySm">Plan</Text>
+              <InlineStack gap="200" blockAlign="center">
+                <Text as="span" variant="headingLg">{isPro ? "Pro" : "Free"}</Text>
+                {isPro ? <Badge tone="success">Active</Badge> : null}
+              </InlineStack>
+              {data.planUrl ? (
+                <Button url={data.planUrl} target="_top" variant={isPro ? "secondary" : "primary"}>
+                  {isPro ? "Manage plan" : "Upgrade to Pro"}
+                </Button>
+              ) : (
+                <Text as="p" tone="subdued" variant="bodySm">
+                  Set SHOPIFY_APP_HANDLE to link the plan page.
+                </Text>
+              )}
             </BlockStack>
-          </Layout.Section>
+          </Card>
+        </InlineGrid>
+
+        {!hasSubscribers ? (
+          <Card>
+            <EmptyState
+              heading="No subscribers yet"
+              image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+            >
+              <p>
+                When a product variant sells out, shoppers see a “Notify me” button on the
+                product page and can sign up. They’ll appear here, and get emailed the moment
+                you restock. Make sure the <b>Restock alerts</b> app embed is enabled in your theme.
+              </p>
+            </EmptyState>
+          </Card>
+        ) : null}
+
+        <Layout>
+          <Layout.AnnotatedSection
+            title="Email branding & behavior"
+            description="Controls how your confirmation and back-in-stock emails look, and when alerts fire."
+          >
+            <Card>
+              <Form method="post">
+                <BlockStack gap="400">
+                  <TextField
+                    label="From name"
+                    name="fromName"
+                    value={fromName}
+                    onChange={setFromName}
+                    autoComplete="off"
+                    helpText="Sender name on emails. Defaults to your store name if blank."
+                  />
+                  <TextField
+                    label="Reply-to email"
+                    name="replyTo"
+                    type="email"
+                    value={replyTo}
+                    onChange={setReplyTo}
+                    autoComplete="email"
+                    helpText="Where replies go. Leave blank to omit a reply-to."
+                  />
+                  <TextField
+                    label="Logo URL"
+                    name="logoUrl"
+                    value={logoUrl}
+                    onChange={setLogoUrl}
+                    autoComplete="off"
+                    helpText="Shown at the top of emails. Leave blank to use your store name."
+                  />
+                  <TextField
+                    label="Brand color"
+                    name="brandColor"
+                    value={brandColor}
+                    onChange={setBrandColor}
+                    autoComplete="off"
+                    helpText="Hex color for email buttons, e.g. #111111."
+                  />
+                  <TextField
+                    label="Restock threshold"
+                    name="minThreshold"
+                    type="number"
+                    min={1}
+                    value={minThreshold}
+                    onChange={setMinThreshold}
+                    autoComplete="off"
+                    helpText="Only send alerts once at least this many units are back in stock."
+                  />
+                  <InlineStack align="end">
+                    <Button submit variant="primary" loading={saving}>
+                      Save settings
+                    </Button>
+                  </InlineStack>
+                </BlockStack>
+              </Form>
+            </Card>
+          </Layout.AnnotatedSection>
         </Layout>
       </BlockStack>
     </Page>
