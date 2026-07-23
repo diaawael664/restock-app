@@ -1,3 +1,12 @@
 .cache
 build
 node_modules
+
+# Never bake secrets or local state into the image (prod uses `fly secrets`).
+.env
+.env.*
+.git
+.gitignore
+.shopify
+*.log
+npm-debug.log*

@@ -1,0 +1,47 @@
+# Fly.io config for Restock Alerts.
+#
+# One image, two long-lived process groups: `web` (serves OAuth/admin/webhooks/proxy)
+# and `worker` (BullMQ consumer that actually sends the alert emails). Both must run.
+#
+# First-time setup:
+#   fly launch --no-deploy --copy-config --name <your-unique-app-name>   # sets `app` below
+#   (set secrets — see the deploy notes) then: fly deploy
+#
+# Change `app` to your chosen name before deploying.
+
+app = "restock-alerts"
+primary_region = "iad"   # near your Neon DB (us-east-1); change to match your DB region
+
+[build]
+
+# Non-secret config only. Secrets (DATABASE_URL, REDIS_URL, RESEND_*, SHOPIFY_*,
+# Partner API) go via `fly secrets set` — never here.
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  SCOPES = "read_products,read_inventory"
+
+# Two process groups from the same image.
+[processes]
+  web = "npm run start"
+  worker = "npm run worker:start"
+
+# Run DB migrations once per release, before the new version goes live.
+# Uses the DATABASE_URL secret; prisma is a runtime dependency so npx resolves it.
+[deploy]
+  release_command = "npx prisma migrate deploy"
+
+# HTTP is served by the web process only. Keep at least one machine always up so
+# webhooks/app-proxy requests are answered instantly (no cold starts).
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["web"]
+
+# Applies to every machine (web + worker). Bump memory if the worker needs it.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
