@@ -17,7 +17,7 @@ Everything you need to take this from code to a running dev install. The code fo
 | GDPR/compliance webhooks | `app/routes/webhooks.compliance.tsx` |
 | Uninstall cleanup | `app/routes/webhooks.app.uninstalled.tsx` |
 | Storefront widget (theme app extension) | `extensions/restock-widget/` |
-| Billing (flat $14.99 Pro) | `app/shopify.server.ts` |
+| Billing (flat $14.99 Pro, Shopify App Pricing) | plan set in Partner Dashboard; status synced by `app/billing.server.ts` |
 
 ## Prerequisites (accounts to create — ~20 min)
 
