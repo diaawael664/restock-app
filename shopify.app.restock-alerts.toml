@@ -22,7 +22,7 @@ subpath = "restock"
 prefix = "apps"
 
 [webhooks]
-api_version = "2026-10"
+api_version = "2026-07"
 
   # ⭐ The differentiator: restock detection. Without this subscription Shopify never
   # delivers inventory changes, so no alert ever fires.
