@@ -4,6 +4,7 @@
   "scripts": {
     "build": "remix vite:build",
     "dev": "shopify app dev",
+    "dev:tunnel": "node scripts/dev-tunnel.mjs",
     "worker": "tsx watch worker.ts",
     "worker:start": "tsx worker.ts",
     "doctor": "node scripts/check-connectivity.mjs",
