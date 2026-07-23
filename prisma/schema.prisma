@@ -1,0 +1,100 @@
+// Prisma schema for Restock Alerts.
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Shopify session storage (managed by @shopify/shopify-app-session-storage-prisma) ──
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+// ── Per-shop settings & plan ──
+model Shop {
+  id              String   @id @default(cuid())
+  shopDomain      String   @unique
+  active          Boolean  @default(true) // flipped false on app/uninstalled
+  plan            String   @default("free") // "free" | "pro"
+  alertsSentMonth Int      @default(0) // for free-tier cap
+  cycleResetAt    DateTime @default(now())
+  // branding / behaviour
+  minThreshold    Int      @default(1) // don't alert until available >= this
+  fromName        String? // e.g. "Acme Store"
+  replyTo         String?
+  brandColor      String   @default("#111111")
+  logoUrl         String?
+  buttonText      String   @default("Notify me when available")
+  createdAt       DateTime @default(now())
+
+  subscribers Subscriber[]
+  alerts      Alert[]
+
+  @@index([shopDomain])
+}
+
+// ── A shopper waiting on a specific variant ──
+model Subscriber {
+  id              String  @id @default(cuid())
+  shopId          String
+  shop            Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  email           String
+  locale          String  @default("en")
+  productId       String // numeric id as string
+  variantId       String
+  inventoryItemId String // numeric — THE match key for the webhook
+  // snapshot so emails render instantly & cheaply (no API call at send time)
+  productTitle    String
+  variantTitle    String?
+  productHandle   String
+  imageUrl        String?
+  price           String?
+  status          String  @default("pending") // pending | notified | failed | unsub
+  unsubToken      String  @unique @default(cuid())
+
+  createdAt  DateTime  @default(now())
+  notifiedAt DateTime?
+
+  alerts Alert[]
+
+  // the hot path: webhook looks up (shopId, inventoryItemId, status=pending)
+  @@unique([shopId, email, variantId]) // no duplicate signups
+  @@index([shopId, inventoryItemId, status])
+}
+
+// ── Every alert we sent — powers the "recovered revenue" dashboard ──
+model Alert {
+  id               String     @id @default(cuid())
+  shopId           String
+  shop             Shop       @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  subscriberId     String
+  subscriber       Subscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  variantId        String
+  sentAt           DateTime   @default(now())
+  clickedAt        DateTime?
+  recoveredOrderId String? // set if a matching order lands (attribution)
+  recoveredValue   String?
+
+  @@index([shopId, sentAt])
+}

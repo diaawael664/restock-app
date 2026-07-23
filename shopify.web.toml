@@ -1,0 +1,9 @@
+# Declares the Remix app as this app's web component so `shopify app dev` actually
+# starts the backend (and its proxy forwards to it). Without this file the CLI only
+# runs the proxy/GraphiQL/extension servers and every app route 500s "Invalid path".
+name = "restock-app"
+
+roles = ["frontend", "backend"]
+
+[commands]
+dev = "npm exec remix vite:dev --"

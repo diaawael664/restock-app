@@ -1,0 +1,28 @@
+{% comment %} App embed: injected on all pages, activates only on sold-out PDPs. {% endcomment %}
+<script
+  src="{{ 'restock.js' | asset_url }}"
+  data-proxy="/apps/restock"
+  data-button-text="{{ block.settings.button_text | default: 'Notify me when available' }}"
+  data-color="{{ block.settings.brand_color | default: '#111111' }}"
+  defer></script>
+
+{% schema %}
+{
+  "name": "Restock alerts",
+  "target": "body",
+  "settings": [
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Button text",
+      "default": "Notify me when available"
+    },
+    {
+      "type": "color",
+      "id": "brand_color",
+      "label": "Button color",
+      "default": "#111111"
+    }
+  ]
+}
+{% endschema %}

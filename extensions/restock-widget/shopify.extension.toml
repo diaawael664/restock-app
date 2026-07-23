@@ -1,0 +1,7 @@
+api_version = "2025-01"
+
+[[extensions]]
+type = "theme"
+name = "Restock alerts"
+handle = "restock-widget"
+uid = "5ac5f222-0869-47a4-81da-103712222e14e7e289c7"
