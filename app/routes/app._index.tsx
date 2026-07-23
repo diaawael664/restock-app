@@ -15,11 +15,14 @@ import {
 } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
+import { refreshShopPlan } from "../billing.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-
-  return null;
+  const { admin, session } = await authenticate.admin(request);
+  // Keep Shop.plan fresh from App Pricing (welcome-redirect param + Partner API) so the
+  // headless worker reads current entitlement. Full dashboard UI comes in Task 4.
+  const plan = await refreshShopPlan(admin, session.shop, request);
+  return { plan };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
