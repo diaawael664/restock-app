@@ -1,0 +1,47 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "b839e21ea8cd0bc2c760f12bf6bf4700"
+name = "Restock Alerts — Back in Stock"
+application_url = "https://basics-disciplines-canyon-disk.trycloudflare.com"
+embedded = true
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_inventory,read_products"
+
+[auth]
+redirect_urls = [ "https://basics-disciplines-canyon-disk.trycloudflare.com/auth/callback", "https://basics-disciplines-canyon-disk.trycloudflare.com/auth/shopify/callback", "https://basics-disciplines-canyon-disk.trycloudflare.com/api/auth" ]
+
+# Storefront /apps/restock/* → this app's /proxy/* routes (e.g. proxy.subscribe.tsx).
+# TEMP quick-tunnel host while dev.restock.shop DNS propagates. `shopify app dev` does
+# NOT auto-update app_proxy, so this is set here + registered via `deploy`. Swap back to
+# https://dev.restock.shop/proxy (and re-deploy) once that hostname resolves.
+[app_proxy]
+url = "https://basics-disciplines-canyon-disk.trycloudflare.com/proxy"
+subpath = "restock"
+prefix = "apps"
+
+[webhooks]
+api_version = "2026-10"
+
+  # ⭐ The differentiator: restock detection. Without this subscription Shopify never
+  # delivers inventory changes, so no alert ever fires.
+  [[webhooks.subscriptions]]
+  topics = [ "inventory_levels/update" ]
+  uri = "/webhooks/inventory_levels/update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+  # Mandatory GDPR/compliance webhooks (App Store requirement).
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+  uri = "/webhooks/compliance"
+
+[build]
+automatically_update_urls_on_dev = true
