@@ -145,3 +145,55 @@ export async function sendRestockEmail(shop: Shop, sub: Subscriber) {
     headers: { "List-Unsubscribe": `<${unsubUrl(sub)}>` },
   });
 }
+
+// ── GDPR: customers/data_request export, emailed to the merchant ──
+export type DataRequestRecord = {
+  productTitle: string;
+  variantTitle: string | null;
+  createdAt: Date;
+};
+
+// Delivers the data we hold for a shopper to the store owner, so they can pass it on.
+// We store only: the shopper's email + which variants they asked to be notified about.
+export async function sendDataRequestExport(
+  to: string,
+  shopDomain: string,
+  customerEmail: string,
+  records: DataRequestRecord[],
+) {
+  const subject = `Customer data request — ${customerEmail}`;
+  if (DRY_RUN) {
+    console.log(`[email:dry-run] data_request -> ${to} :: ${subject} (${records.length} record(s))`);
+    return;
+  }
+  const cell = "padding:6px 10px;border:1px solid #eee;text-align:left";
+  const rows = records
+    .map(
+      (r) =>
+        `<tr><td style="${cell}">${esc(r.productTitle)}</td>` +
+        `<td style="${cell}">${esc(r.variantTitle)}</td>` +
+        `<td style="${cell}">${r.createdAt.toISOString()}</td></tr>`,
+    )
+    .join("");
+  const table = records.length
+    ? `<table style="border-collapse:collapse;font-size:14px;margin:12px 0">
+         <tr><th style="${cell}">Product</th><th style="${cell}">Variant</th><th style="${cell}">Subscribed at (UTC)</th></tr>
+         ${rows}
+       </table>`
+    : `<p style="font-size:14px;color:#444">No back-in-stock records are stored for this email.</p>`;
+  await resendClient().emails.send({
+    from: `Restock Alerts <${FROM_ADDRESS}>`,
+    to,
+    subject,
+    html: `<div style="font-family:${FONT};color:#222;max-width:640px">
+      <h2 style="font-size:18px;margin:0 0 8px">Customer data request (GDPR)</h2>
+      <p style="font-size:14px;line-height:1.6;color:#444">
+        A data request was received for <strong>${esc(customerEmail)}</strong> on
+        <strong>${esc(shopDomain)}</strong>. Restock Alerts stores only a shopper's email and the
+        product variants they asked to be notified about — the full record we hold is below.
+        Please forward it to the customer as required.
+      </p>
+      ${table}
+    </div>`,
+  });
+}
