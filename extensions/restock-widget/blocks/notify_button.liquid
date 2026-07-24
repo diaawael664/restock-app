@@ -1,0 +1,34 @@
+{% comment %}
+  App block — merchants add this inside a product section (Add block → Apps).
+  It renders the "Notify me" button in place on sold-out variants. restock.js (loaded via
+  the schema "javascript" field below) handles sold-out detection, the modal, and subscribe.
+{% endcomment %}
+<div
+  data-restock-block
+  data-proxy="/apps/restock"
+  data-button-text="{{ block.settings.button_text | default: 'Notify me when available' | escape }}"
+  data-color="{{ block.settings.brand_color | default: '#111111' }}"
+  {{ block.shopify_attributes }}
+></div>
+
+{% schema %}
+{
+  "name": "Restock alert button",
+  "target": "section",
+  "javascript": "restock.js",
+  "settings": [
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Button text",
+      "default": "Notify me when available"
+    },
+    {
+      "type": "color",
+      "id": "brand_color",
+      "label": "Button color",
+      "default": "#111111"
+    }
+  ]
+}
+{% endschema %}

@@ -1,8 +1,16 @@
 (function () {
+  if (window.__restockWidgetInit) return; // guard: file may load via both embed + block
+  window.__restockWidgetInit = true;
+
   var s = document.currentScript;
-  var proxy = s.dataset.proxy;
-  var label = s.dataset.buttonText || "Notify me when available";
-  var color = s.dataset.color || "#111111";
+  // App embed passes config on its <script data-*> tag. The app block loads this file via
+  // its schema "javascript" field (async → currentScript is null) and carries config on its
+  // own [data-restock-block] element instead.
+  var block = document.querySelector("[data-restock-block]");
+  var cfg = s && s.dataset && s.dataset.proxy ? s.dataset : block ? block.dataset : {};
+  var proxy = cfg.proxy || "/apps/restock";
+  var label = cfg.buttonText || "Notify me when available";
+  var color = cfg.color || "#111111";
 
   function currentVariant() {
     var url = new URL(location.href);
@@ -201,17 +209,26 @@
   }
 
   function mount() {
-    // Off a PDP, or no product form → make sure no stale button lingers.
-    if (!/\/products\//.test(location.pathname) || !document.querySelector('form[action*="/cart/add"]')) {
+    if (!/\/products\//.test(location.pathname)) {
+      removeBtn();
+      return;
+    }
+    // App block → mount into the merchant-placed block; app embed → inject into the cart form.
+    var container =
+      document.querySelector("[data-restock-block]") ||
+      document.querySelector('form[action*="/cart/add"]');
+    if (!container) {
       removeBtn();
       return;
     }
     isSoldOut().then(function (soldOut) {
+      // In the theme editor, always show the placed block so the merchant can see/style it.
+      var editorPreview =
+        container.hasAttribute("data-restock-block") &&
+        !!(window.Shopify && window.Shopify.designMode);
       // In stock (e.g. switched to an available variant) → tear our button back down.
-      if (!soldOut) return removeBtn();
+      if (!soldOut && !editorPreview) return removeBtn();
       if (document.getElementById("restock-btn")) return;
-      var form = document.querySelector('form[action*="/cart/add"]');
-      if (!form) return;
 
       injectStyles();
       var btn = document.createElement("button");
@@ -220,7 +237,7 @@
       btn.textContent = label;
       btn.style.background = color;
       btn.addEventListener("click", openModal);
-      form.appendChild(btn);
+      container.appendChild(btn);
     });
   }
 
