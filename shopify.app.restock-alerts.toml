@@ -2,7 +2,7 @@
 
 client_id = "b839e21ea8cd0bc2c760f12bf6bf4700"
 name = "Restock Alerts — Back in Stock"
-application_url = "https://basics-disciplines-canyon-disk.trycloudflare.com"
+application_url = "https://restock-alerts-diaa.fly.dev"
 embedded = true
 
 [access_scopes]
@@ -10,14 +10,13 @@ embedded = true
 scopes = "read_inventory,read_products"
 
 [auth]
-redirect_urls = [ "https://basics-disciplines-canyon-disk.trycloudflare.com/auth/callback", "https://basics-disciplines-canyon-disk.trycloudflare.com/auth/shopify/callback", "https://basics-disciplines-canyon-disk.trycloudflare.com/api/auth" ]
+redirect_urls = [ "https://restock-alerts-diaa.fly.dev/auth/callback", "https://restock-alerts-diaa.fly.dev/auth/shopify/callback", "https://restock-alerts-diaa.fly.dev/api/auth" ]
 
 # Storefront /apps/restock/* → this app's /proxy/* routes (e.g. proxy.subscribe.tsx).
-# TEMP quick-tunnel host while dev.restock.shop DNS propagates. `shopify app dev` does
-# NOT auto-update app_proxy, so this is set here + registered via `deploy`. Swap back to
-# https://dev.restock.shop/proxy (and re-deploy) once that hostname resolves.
+# Production host (Fly). If you move to a custom domain, update all URLs here + the
+# SHOPIFY_APP_URL secret, then `npm run deploy`.
 [app_proxy]
-url = "https://basics-disciplines-canyon-disk.trycloudflare.com/proxy"
+url = "https://restock-alerts-diaa.fly.dev/proxy"
 subpath = "restock"
 prefix = "apps"
 
@@ -44,4 +43,5 @@ api_version = "2026-07"
   uri = "/webhooks/compliance"
 
 [build]
-automatically_update_urls_on_dev = true
+# URLs are managed by this toml (production = Fly), not overwritten by `shopify app dev`.
+automatically_update_urls_on_dev = false
