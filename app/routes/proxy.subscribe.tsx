@@ -1,4 +1,4 @@
-import type { ActionFunctionArgs } from "@remix-run/node";
+import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { sendConfirmationEmail } from "../email.server";
@@ -10,7 +10,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // Verifies the App Proxy signature and gives us shop context + an admin client.
   const { session, admin } = await authenticate.public.appProxy(request);
   if (!session || !admin) {
-    return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    return json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
   const form = await request.formData();
@@ -18,10 +18,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const variantId = String(form.get("variantId") || "").trim();
 
   if (!EMAIL_RE.test(email)) {
-    return Response.json({ ok: false, error: "invalid_email" }, { status: 400 });
+    return json({ ok: false, error: "invalid_email" }, { status: 400 });
   }
   if (!variantId) {
-    return Response.json({ ok: false, error: "missing_variant" }, { status: 400 });
+    return json({ ok: false, error: "missing_variant" }, { status: 400 });
   }
 
   // Ensure a Shop row exists (created lazily on first storefront interaction).
@@ -46,7 +46,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   );
   const v = (await res.json())?.data?.productVariant;
   if (!v?.inventoryItem?.id) {
-    return Response.json({ ok: false, error: "variant_not_found" }, { status: 404 });
+    return json({ ok: false, error: "variant_not_found" }, { status: 404 });
   }
 
   const inventoryItemId = v.inventoryItem.id.split("/").pop();
@@ -84,12 +84,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     console.error("[subscribe] confirmation email failed:", err),
   );
 
-  return Response.json({ ok: true });
+  return json({ ok: true });
   } catch (err) {
     // appProxy throws a Response (e.g. 401 on a bad signature) — let Remix handle those.
     if (err instanceof Response) throw err;
     // Any real error: log server-side, return clean JSON so the widget never gets HTML.
     console.error("[subscribe] error:", err);
-    return Response.json({ ok: false, error: "server_error" }, { status: 500 });
+    return json({ ok: false, error: "server_error" }, { status: 500 });
   }
 };
